@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Art Construct v6.0 - Art Heist</title>
+    
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Space+Mono:wght@400;700;900&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" />
+
+    <style>
+        :root {
+            --bg: #f4f4f4;
+            --line: rgba(0,0,0,0.08);
+            --cell-empty: #ffffff;
+            --text: #111;
+            --panel: rgba(255,255,255,0.95);
+            --border: rgba(0,0,0,0.1);
+            --hover: #e0e0e0;
+            --accent: #007AFF;
+            --danger: #FF3B30;
+            --font-ui: 'Inter', sans-serif;
+            --font-art: 'Space Mono', monospace;
+        }
+
+        body.dark {
+            --bg: #111;
+            --line: rgba(255,255,255,0.1);
+            --cell-empty: #1a1a1a;
+            --text: #fff;
+            --panel: rgba(30,30,30,0.95);
+            --border: rgba(255,255,255,0.15);
+            --hover: #333;
+        }
+
+        body {
+            margin: 0; height: 100vh; overflow: hidden;
+            background: var(--bg); color: var(--text);
+            font-family: var(--font-ui);
+            user-select: none;
+            perspective: 1200px; /* 3D Perspective */
+        }
+
+        /* LAYOUT WRAPPER */
+        .layout-wrapper {
+            display: flex; align-items: center; justify-content: center;
+            width: 100%; height: 100%;
+            position: absolute; top: 0; left: 0;
+            z-index: 1; pointer-events: none;
+            transform-style: preserve-3d;
+        }
+
+        /* GRID */
+        .mondrian-grid {
+            pointer-events: auto;
+            width: var(--grid-w, 80vmin); height: var(--grid-h, 80vmin);
+            margin-right: 260px;
+            background-color: var(--line); border: 1px solid var(--line); gap: 1px;
+            display: grid;
+            /* Default 12x12 to prevent collapse */
+            grid-template-columns: repeat(12, 1fr); 
+            grid-template-rows: repeat(12, 1fr);
+            transition: width 0.3s ease, height 0.3s ease, transform 0.1s ease-out, box-shadow 0.3s ease;
+            transform: rotateX(0) rotateY(0);
+        }
+
+        /* 3D Active State */
+        .mondrian-grid.is-3d {
+            box-shadow: 0 50px 100px rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        /* GAME ANIMATION */
+        .shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-2px, 0, 0); }
+            20%, 80% { transform: translate3d(4px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-8px, 0, 0); }
+            40%, 60% { transform: translate3d(8px, 0, 0); }
+        }
+
+        /* CELLS */
+        .cell {
+            background-color: var(--cell-empty);
+            position: relative; 
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden;
+            transition: background-color 0.2s ease, transform 0.2s ease, opacity 0.3s ease;
+            padding: 0; box-sizing: border-box;
+            backface-visibility: hidden;
+        }
+
+        .mondrian-grid.is-3d .cell:hover {
+            transform: translateZ(20px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
+
+        .inner-visual {
+            display: flex; align-items: center; justify-content: center;
+            width: 100%; height: 100%; min-width: 100%; min-height: 100%;
+        }
+        .inner-visual svg { width: 100%; height: 100%; display: block; object-fit: contain; }
+
+        .ascii-art {
+            font-family: var(--font-art); font-weight: 900; line-height: 1; text-align: center;
+            pointer-events: none; display: flex; align-items: center; justify-content: center;
+            width: 100%; height: 100%; font-size: clamp(20px, 8vw, 100px); color: currentColor; overflow: hidden; 
+        }
+
+        .cell.painted { z-index: 1; cursor: pointer; }
+        .cell:hover { z-index: 10; filter: brightness(0.95); }
+        .dark .cell:hover { filter: brightness(1.2); }
+
+        /* SIDEBAR */
+        .sidebar {
+            pointer-events: auto;
+            position: fixed; right: 20px; top: 20px; bottom: 20px;
+            width: 240px;
+            background: var(--panel); border: 1px solid var(--border); border-radius: 16px; 
+            padding: 16px; backdrop-filter: blur(20px);
+            display: flex; flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            z-index: 100;
+        }
+
+        .scroll-content { overflow-y: auto; flex: 1; padding-right: 4px; }
+        .scroll-content::-webkit-scrollbar { width: 4px; }
+        .scroll-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+        .header { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 8px; }
+        .buttons-grid { display: flex; flex-direction: column; gap: 8px; }
+        .separator { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.5; margin-top: 4px; }
+
+        button {
+            background: var(--bg); color: var(--text); border: 1px solid var(--border);
+            padding: 10px; border-radius: 8px; font-weight: 600; font-size: 10px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;
+            transition: all 0.1s ease; font-family: var(--font-ui);
+        }
+        button:hover { transform: translateY(-1px); background: var(--hover); border-color: var(--text); }
+        button:active { transform: translateY(1px); }
+
+        .primary-btn { background: var(--text); color: var(--bg); border-color: var(--text); }
+        .palette-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+        .mode-row, .system-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+        .tools-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+        .tool-label { font-size: 9px; text-align: center; opacity: 0.6; }
+
+        .tool-btn.active, .mode-btn.active, .pal-btn.active, .effect-btn.active {
+            background: var(--accent); color: white; border-color: var(--accent);
+            box-shadow: 0 4px 10px rgba(0,122,255,0.3);
+        }
+
+        .export-column { display: flex; flex-direction: column; gap: 4px; }
+        .export-btn { background: transparent; border: 1px dashed var(--border); color: var(--text); justify-content: flex-start; padding-left: 15px; }
+        .export-btn:hover { background: var(--bg); border-style: solid; border-color: var(--accent); color: var(--accent); }
+        .danger-btn:hover { color: var(--danger); border-color: var(--danger); }
+
+        @media (max-width: 900px) {
+            .mondrian-grid { margin-right: 0; width: 100vmin !important; height: 100vmin !important; margin-bottom: 30vh; }
+            .sidebar { right: 0; left: 0; top: auto; bottom: 0; width: 95%; margin: 0 auto 10px auto; height: 28vh; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 -5px 30px rgba(0,0,0,0.15); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="layout-wrapper" id="scene">
+        <div class="mondrian-grid" id="grid"></div>
+    </div>
+
+    <div class="sidebar" id="ui">
+        <div class="header">
+            <strong>Art Construct <span style="opacity: 0.5;">v6.0</span></strong>
+        </div>
+        
+        <div class="scroll-content">
+            
+            <div id="game-dashboard" style="display:none; margin-bottom: 15px; background:#111; color:#fff; padding:12px; border-radius:12px; border:1px solid #333;">
+                <div style="font-size:10px; opacity:0.7; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Current Mission</div>
+                <div id="game-target" style="font-weight:700; font-size:14px; margin-bottom: 8px; line-height:1.4;">Loading...</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #333; padding-top:8px;">
+                    <span id="game-timer" style="font-family:'Space Mono'; font-size:16px; color:#FF3B30;">0.00s</span>
+                    <button id="btnStopGame" style="padding:6px 12px; font-size:10px; background:#333; border:none; color:#fff; border-radius:6px;">QUIT</button>
+                </div>
+            </div>
+
+            <div class="buttons-grid" id="main-controls">
+                
+                <button id="btnStartGame" class="primary-btn" style="background: var(--accent); border-color: var(--accent); color: white; padding: 14px; font-size:12px; letter-spacing:0.5px;">
+                    <span class="material-symbols-rounded">sports_esports</span> START ART HEIST
+                </button>
+
+                <div class="separator">Generators</div>
+                <button id="btnLayout" class="primary-btn">
+                    <span class="material-symbols-rounded">style</span> Mode: Chaos
+                </button>
+                <div class="mode-row">
+                    <button id="btn3D" class="effect-btn" title="Toggle 3D View"><span class="material-symbols-rounded">view_in_ar</span> 3D</button>
+                    <button id="btnReroll"><span class="material-symbols-rounded">refresh</span> Reroll</button>
+                </div>
+
+                <div class="separator">Color Palette</div>
+                <div class="palette-row" style="grid-template-columns: repeat(4, 1fr);">
+                    <button onclick="setPalette('modern')" class="pal-btn active" id="pal-modern" title="Modern"><span style="color:#007AFF">●</span></button>
+                    <button onclick="setPalette('vivid')" class="pal-btn" id="pal-vivid" title="Neon"><span style="color:#FF00FF">●</span></button>
+                    <button onclick="setPalette('bauhaus')" class="pal-btn" id="pal-bauhaus" title="Bauhaus"><span style="color:#D6241F">●</span></button>
+                    <button onclick="setPalette('cubist')" class="pal-btn" id="pal-cubist" title="Cubism"><span style="color:#A0522D">●</span></button>
+                </div>
+                
+                <div class="separator">Creative Tools</div>
+                <div class="tools-container" style="grid-template-columns: repeat(3, 1fr);">
+                    <button onclick="setTool('solid')" class="tool-btn" id="tool-solid" title="Solid"><span class="material-symbols-rounded">format_paint</span></button>
+                    <button onclick="setTool('gradient')" class="tool-btn" id="tool-gradient" title="Gradient"><span class="material-symbols-rounded">gradient</span></button>
+                    <button onclick="setTool('shape')" class="tool-btn" id="tool-shape" title="Shape"><span class="material-symbols-rounded">category</span></button>
+                    <button onclick="setTool('ascii')" class="tool-btn" id="tool-ascii" title="ASCII"><span class="material-symbols-rounded">font_download</span></button>
+                    <button onclick="setTool('pattern')" class="tool-btn" id="tool-pattern" title="Pattern"><span class="material-symbols-rounded">grid_on</span></button>
+                    <button onclick="setTool('chaos')" class="tool-btn active" id="tool-chaos" title="Chaos"><span class="material-symbols-rounded">shuffle</span></button>
+                </div>
+                <div class="tool-label" id="toolLabel">Current: Chaos</div>
+
+                <div class="separator">Control</div>
+                <div class="tools-container" style="grid-template-columns: repeat(4, 1fr);">
+                    <button id="btnModeClick" class="mode-btn active" title="Click"><span class="material-symbols-rounded">touch_app</span></button>
+                    <button id="btnModeHover" class="mode-btn" title="Draw"><span class="material-symbols-rounded">brush</span></button>
+                    <button id="btnAnimGrid" class="mode-btn" title="Anim Grid"><span class="material-symbols-rounded">grid_4x4</span></button>
+                    <button id="btnAnimShape" class="mode-btn" title="Anim Shape"><span class="material-symbols-rounded">motion_mode</span></button>
+                </div>
+                
+                <div class="separator">System</div>
+                <div class="export-column">
+                    <button id="btnPng" class="export-btn">
+                        <span class="material-symbols-rounded">image</span> Save 4K PNG
+                    </button>
+                    <button id="btnSvg" class="export-btn">
+                        <span class="material-symbols-rounded">code</span> Save SVG
+                    </button>
+                </div>
+                
+                <div class="system-row" style="margin-top: 10px;">
+                    <button id="btnTheme"><span class="material-symbols-rounded">contrast</span></button>
+                    <button id="btnClear" class="danger-btn"><span class="material-symbols-rounded">delete</span> Clear</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const PALETTES = {
+            modern: {
+                solids: ['#FF3B30', '#007AFF', '#34C759', '#FF9500', '#AF52DE', '#EEEEEE'],
+                gradients: ['linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%)', 'linear-gradient(120deg, #a18cd1 0%, #fbc2eb 100%)', 'linear-gradient(to top, #fff1eb 0%, #ace0f9 100%)']
+            },
+            vivid: {
+                solids: ['#FF00FF', '#00FFFF', '#FFFF00', '#00FF00', '#FF0055', '#FFFFFF'],
+                gradients: ['linear-gradient(45deg, #FF00FF, #00FFFF)', 'linear-gradient(90deg, #FFFF00, #FF0000)']
+            },
+            bauhaus: {
+                solids: ['#D6241F', '#245BA8', '#F8CF38', '#222222', '#F0F0F0'],
+                gradients: ['linear-gradient(to right, #D6241F 50%, #245BA8 50%)']
+            },
+            cubist: {
+                solids: ['#A0522D', '#CD853F', '#8B4513', '#708090', '#2F4F4F', '#DCDCDC'],
+                gradients: ['linear-gradient(to right, #A0522D, #CD853F)']
+            }
+        };
+
+        const CONFIG = {
+            GRID_LERP: 0.12, GRID_INTERVAL: 800, SHAPE_INTERVAL: 400, MOUSE_EXPANSION: 3.0,
+            EMPTY_CHANCE: 0.50, PATTERN_CHANCE: 0.15 
+        };
+
+        const State = {
+            ratioMode: 0, layoutMode: 0, paletteMode: 'modern',
+            interactionMode: 'click', activeTool: 'chaos',
+            isGridActive: false, isShapeActive: false, is3D: false,
+            cols: 12, rows: 12,
+            currentColSizes: [], targetColSizes: [], currentRowSizes: [], targetRowSizes: [],
+            baseColSizes: [], baseRowSizes: [],
+            hoverCol: -1, hoverRow: -1,
+            cells: [],
+            game: { active: false, targetType: null, targetColor: null, required: 3, found: 0, startTime: 0, timerId: null }
+        };
+
+        const grid = document.getElementById('grid');
+        let renderLoopId, gridIntervalId, shapeIntervalId;
+        const lerp = (start, end, amt) => (1 - amt) * start + amt * end;
+
+        // --- 3D ENGINE ---
+        document.addEventListener('mousemove', (e) => {
+            if(!State.is3D) return;
+            const x = (window.innerWidth / 2 - e.clientX) / 30;
+            const y = (window.innerHeight / 2 - e.clientY) / 30;
+            grid.style.transform = `rotateY(${x}deg) rotateX(${y}deg)`;
+        });
+
+        document.getElementById('btn3D').onclick = (e) => {
+            State.is3D = !State.is3D;
+            e.currentTarget.classList.toggle('active', State.is3D);
+            grid.classList.toggle('is-3d', State.is3D);
+            if(!State.is3D) grid.style.transform = `rotateY(0deg) rotateX(0deg)`;
+        };
+
+        // --- SHAPES ---
+        function getShapeContent(type, color) {
+            if (type === 'dots') return `<svg width="100%" height="100%"><defs><pattern id="p_${color.replace(/[^a-z0-9]/gi, '')}" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="5" cy="5" r="3.5" fill="${color}"/></pattern></defs><rect width="100%" height="100%" fill="url(#p_${color.replace(/[^a-z0-9]/gi, '')})" /></svg>`;
+            if (type === 'grid') return `<svg width="100%" height="100%"><defs><pattern id="g_${color.replace(/[^a-z0-9]/gi, '')}" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="${color}" stroke-width="4"/></pattern></defs><rect width="100%" height="100%" fill="url(#g_${color.replace(/[^a-z0-9]/gi, '')})" /></svg>`;
+            if (type === 'rect') return ''; 
+            let inner = '';
+            if (type === 'circle') inner = `<circle cx='50' cy='50' r='48' fill='${color}'/>`;
+            else if (type === 'triangle') inner = `<polygon points='50,10 90,90 10,90' fill='${color}'/>`;
+            else if (type === 'rhombus') inner = `<polygon points='50,10 90,50 50,90 10,50' fill='${color}'/>`;
+            else if (type === 'outline-circles') inner = `<circle cx='50' cy='50' r='45' fill='none' stroke='${color}' stroke-width='6'/><circle cx='50' cy='50' r='30' fill='none' stroke='${color}' stroke-width='6'/><circle cx='50' cy='50' r='15' fill='none' stroke='${color}' stroke-width='6'/>`;
+            else if (type === 'triple-triangle') inner = `<polygon points='50,5 95,85 5,85' fill='${color}' opacity='0.5'/><polygon points='50,15 85,75 15,75' fill='${color}' opacity='0.7'/><polygon points='50,25 75,65 25,65' fill='${color}' opacity='0.9'/>`;
+            return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">${inner}</svg>`;
+        }
+
+        // --- CORE LOOP ---
+        function initGridState() {
+            if (!State.currentColSizes || State.currentColSizes.length !== State.cols) {
+                State.currentColSizes = new Array(State.cols).fill(1); State.currentRowSizes = new Array(State.rows).fill(1);
+                State.baseColSizes = [...State.currentColSizes]; State.baseRowSizes = [...State.currentRowSizes];
+                State.targetColSizes = [...State.currentColSizes]; State.targetRowSizes = [...State.currentRowSizes];
+            }
+            grid.style.gridTemplateColumns = State.currentColSizes.map(v => v + 'fr').join(' ');
+            grid.style.gridTemplateRows = State.currentRowSizes.map(v => v + 'fr').join(' ');
+            if (!renderLoopId) renderLoop();
+        }
+        function updateTargets() {
+            if (State.isGridActive) return;
+            for(let i=0; i<State.cols; i++) { State.targetColSizes[i] = State.baseColSizes[i]; }
+            for(let i=0; i<State.rows; i++) { State.targetRowSizes[i] = State.baseRowSizes[i]; }
+            if (State.hoverCol !== -1 && State.hoverCol < State.cols) State.targetColSizes[State.hoverCol] = Math.max(State.baseColSizes[State.hoverCol], CONFIG.MOUSE_EXPANSION);
+            if (State.hoverRow !== -1 && State.hoverRow < State.rows) State.targetRowSizes[State.hoverRow] = Math.max(State.baseRowSizes[State.hoverRow], CONFIG.MOUSE_EXPANSION);
+        }
+        function renderLoop() {
+            if (!State.currentColSizes || State.currentColSizes.length === 0) { renderLoopId = requestAnimationFrame(renderLoop); return; }
+            updateTargets();
+            let changed = false;
+            for(let i=0; i<State.cols; i++) {
+                const newVal = lerp(State.currentColSizes[i], State.targetColSizes[i], CONFIG.GRID_LERP);
+                if (Math.abs(newVal - State.currentColSizes[i]) > 0.001) { State.currentColSizes[i] = newVal; changed = true; }
+            }
+            for(let i=0; i<State.rows; i++) {
+                const newVal = lerp(State.currentRowSizes[i], State.targetRowSizes[i], CONFIG.GRID_LERP);
+                if (Math.abs(newVal - State.currentRowSizes[i]) > 0.001) { State.currentRowSizes[i] = newVal; changed = true; }
+            }
+            if (changed || State.isGridActive) {
+                grid.style.gridTemplateColumns = State.currentColSizes.map(v => v.toFixed(3) + 'fr').join(' ');
+                grid.style.gridTemplateRows = State.currentRowSizes.map(v => v.toFixed(3) + 'fr').join(' ');
+            }
+            renderLoopId = requestAnimationFrame(renderLoop);
+        }
+
+        // --- CELL VISUALS ---
+        function setVisual(cell, style) {
+            cell._style = style; 
+            cell.style.background = '';
+            cell.classList.remove('painted');
+            cell.innerHTML = ''; 
+
+            if (style.type === 'empty') return;
+            cell.classList.add('painted');
+            
+            if (style.shape === 'rect' || style.val.includes('gradient')) {
+                cell.style.background = style.val;
+            }
+            
+            if (style.shape === 'ascii') {
+                const div = document.createElement('div');
+                div.className = 'ascii-art';
+                div.style.color = style.val; 
+                div.innerText = style.textVal;
+                cell.appendChild(div);
+            }
